@@ -102,6 +102,102 @@ class TestAuthorizationCodeFlow:
         assert 'code=' in location
         assert 'state=test123' in location
 
+    def test_authorize_post_ignores_form_body_oauth_params(self, client):
+        """#325: a forged client_id/redirect_uri/state/scope in the login
+        POST body must not override the request validated on GET - the
+        issued code must still be bound to what the user actually approved.
+        """
+        # First GET to set session with the real request.
+        client.get(
+            '/authorize?response_type=code&client_id=demo-client'
+            '&redirect_uri=http://localhost:3000/callback&scope=openid&state=test123'
+        )
+
+        # POST with valid credentials PLUS a forged set of OAuth params
+        # trying to redirect the issued code to an attacker-controlled URI.
+        response = client.post('/authorize', data={
+            'username': 'admin',
+            'password': 'admin',
+            'client_id': 'test-client',
+            'redirect_uri': 'http://evil.example/cb',
+            'state': 'evil-state',
+            'scope': 'admin-only',
+        }, follow_redirects=False)
+
+        assert response.status_code == 302
+        location = response.headers.get('Location')
+        assert location.startswith('http://localhost:3000/callback')
+        assert 'evil.example' not in location
+        assert 'code=' in location
+        assert 'state=test123' in location
+        assert 'state=evil-state' not in location
+
+    def test_authorize_post_survives_another_tab_clearing_the_session(self, client):
+        """#325 review round 1, point 1 ("cross-tab clearing"): a completed
+        login anywhere, sharing the same cookie jar, clears every oauth_
+        session key (_issue_authorization_code). The login form has no
+        ``action``, so a POST always lands back on the exact
+        ``/authorize?...`` URL of the page it rendered - reading that query
+        string first, rather than falling through to the now-empty session,
+        keeps this tab's POST bound to its own request instead of 400ing
+        with "client_id is required".
+        """
+        qs = (
+            'response_type=code&client_id=demo-client'
+            '&redirect_uri=http://localhost:3000/callback&scope=openid&state=tab-a'
+        )
+        client.get(f'/authorize?{qs}')
+
+        # A second tab, same cookie jar: a different client's request
+        # completes and clears every oauth_ session key.
+        client.get(
+            '/authorize?response_type=code&client_id=test-client'
+            '&redirect_uri=http://localhost:4000/callback&scope=openid&state=tab-b'
+        )
+        client.post('/authorize', data={'username': 'admin', 'password': 'admin'})
+
+        # Tab A submits valid credentials on its OWN URL.
+        response = client.post(f'/authorize?{qs}', data={
+            'username': 'admin',
+            'password': 'admin',
+        }, follow_redirects=False)
+
+        assert response.status_code == 302
+        location = response.headers['Location']
+        assert location.startswith('http://localhost:3000/callback')
+        assert 'state=tab-a' in location
+
+    def test_authorize_post_is_not_hijacked_by_another_tabs_get(self, client):
+        """#325 review round 1, point 1 ("cross-tab overwrite"): a second
+        tab's mere GET - no login - overwrites the session's oauth_ keys
+        with its own request. Tab A's POST, landing back on its own
+        ``/authorize?...`` URL, must stay bound to what Tab A's user
+        actually saw and approved, not be redirected to Tab B's client.
+        """
+        qs = (
+            'response_type=code&client_id=demo-client'
+            '&redirect_uri=http://localhost:3000/callback&scope=openid&state=tab-a'
+        )
+        client.get(f'/authorize?{qs}')
+
+        # A second tab, same cookie jar, merely opens a different request -
+        # never logs in.
+        client.get(
+            '/authorize?response_type=code&client_id=test-client'
+            '&redirect_uri=http://localhost:4000/callback&scope=openid&state=tab-b'
+        )
+
+        response = client.post(f'/authorize?{qs}', data={
+            'username': 'admin',
+            'password': 'admin',
+        }, follow_redirects=False)
+
+        assert response.status_code == 302
+        location = response.headers['Location']
+        assert location.startswith('http://localhost:3000/callback')
+        assert 'state=tab-a' in location
+        assert 'localhost:4000' not in location
+
     def test_authorize_code_exchange(self, client, auth_header):
         """Test exchanging authorization code for tokens."""
         # Get authorization code

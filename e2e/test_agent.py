@@ -731,7 +731,7 @@ class NanoIDPTestAgent:
             if page.status_code == 200:
                 login = flow.post(
                     f"{self.base_url}/authorize",
-                    data={**auth_params, "username": self.username, "password": self.password},
+                    data={"username": self.username, "password": self.password},
                     allow_redirects=False,
                     timeout=5,
                 )
@@ -831,8 +831,14 @@ class NanoIDPTestAgent:
                 "claims": json.dumps({"id_token": {"email": None, "email_verified": None}}),
             }
 
+            # A dedicated session (#325): the POST leg is now bound to the
+            # session cookie the GET leg set, not to whatever the form body
+            # repeats, so the two legs must actually share a cookie jar -
+            # exactly like a real browser tab would.
+            flow = requests.Session()
+
             # Get the authorization page
-            response = requests.get(
+            response = flow.get(
                 f"{self.base_url}/authorize",
                 params=auth_params,
                 allow_redirects=False,
@@ -841,10 +847,9 @@ class NanoIDPTestAgent:
 
             if response.status_code == 200:
                 # Got login page, now submit credentials
-                response = requests.post(
+                response = flow.post(
                     f"{self.base_url}/authorize",
                     data={
-                        **auth_params,
                         "username": self.username,
                         "password": self.password
                     },
@@ -981,7 +986,7 @@ class NanoIDPTestAgent:
                  allow_redirects=False, timeout=5)
         resp = sess.post(
             f"{self.base_url}/authorize",
-            data={**auth_params, "username": self.username, "password": self.password},
+            data={"username": self.username, "password": self.password},
             allow_redirects=False,
             timeout=5,
         )
@@ -1162,26 +1167,40 @@ class NanoIDPTestAgent:
             }
 
             # Complete the loopback flow: the code must land on the port the
-            # app asked for, not on the registered placeholder.
-            login = requests.post(
+            # app asked for, not on the registered placeholder. A dedicated
+            # session (#325): the POST leg is bound to the GET leg's session
+            # cookie, so the two must share a cookie jar like a real browser
+            # tab would, and the GET has to actually run first.
+            flow = requests.Session()
+            page = flow.get(
                 f"{self.base_url}/authorize",
-                data={
+                params={
                     "response_type": "code",
                     "client_id": test_client_id,
                     "redirect_uri": "http://127.0.0.1:51234/callback",
                     "scope": "openid",
-                    "username": self.username,
-                    "password": self.password,
                 },
                 allow_redirects=False,
                 timeout=5,
             )
-            location = login.headers.get("Location", "")
-            checks["loopback_flow_redirects_to_requested_port"] = (
-                login.status_code == 302
-                and location.startswith("http://127.0.0.1:51234/callback?")
-                and "code=" in location
-            )
+            if page.status_code == 200:
+                login = flow.post(
+                    f"{self.base_url}/authorize",
+                    data={
+                        "username": self.username,
+                        "password": self.password,
+                    },
+                    allow_redirects=False,
+                    timeout=5,
+                )
+                location = login.headers.get("Location", "")
+                checks["loopback_flow_redirects_to_requested_port"] = (
+                    login.status_code == 302
+                    and location.startswith("http://127.0.0.1:51234/callback?")
+                    and "code=" in location
+                )
+            else:
+                checks["loopback_flow_redirects_to_requested_port"] = False
 
             success = all(checks.values())
             return self._add_result(
@@ -1636,7 +1655,7 @@ class NanoIDPTestAgent:
             combined_sess.get(f"{self.base_url}/authorize", params=auth_params, timeout=5)
             combined_post = combined_sess.post(
                 f"{self.base_url}/authorize",
-                data={**auth_params, "username": self.username, "password": self.password},
+                data={"username": self.username, "password": self.password},
                 allow_redirects=False,
                 timeout=5,
             )
@@ -3683,15 +3702,19 @@ class NanoIDPTestAgent:
                 "scope": "openid",
                 "state": state,
             }
-            requests.get(
+            # A dedicated session (#325): the POST leg is bound to the GET
+            # leg's session cookie, so the two must share a cookie jar like
+            # a real browser tab would.
+            flow = requests.Session()
+            flow.get(
                 f"{self.base_url}/authorize",
                 params=auth_params,
                 allow_redirects=False,
                 timeout=5
             )
-            authorize_resp = requests.post(
+            authorize_resp = flow.post(
                 f"{self.base_url}/authorize",
-                data={**auth_params, "username": persona_user},
+                data={"username": persona_user},
                 allow_redirects=False,
                 timeout=5
             )
