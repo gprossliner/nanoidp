@@ -116,4 +116,21 @@ with_class="$(helm template "$CHART_DIR" --set ingress.create=true --set ingress
 assert_eq "ingress.className renders as ingressClassName" \
   "$(yq 'select(.kind == "Ingress") | .spec.ingressClassName' <<<"$with_class")" "nginx"
 
+echo "=== NOTES.txt ==="
+# helm template does not render NOTES.txt at all, only helm install/
+# upgrade (or --dry-run=client) do.
+notes_default="$(helm install ci-check "$CHART_DIR" --dry-run=client)"
+if ! grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$notes_default"; then
+  echo "FAIL: NOTES.txt did not warn about the 0.0.0 placeholder tag with default values" >&2
+  exit 1
+fi
+echo "ok: NOTES.txt warns about the 0.0.0 placeholder tag by default"
+
+notes_tagged="$(helm install ci-check "$CHART_DIR" --dry-run=client --set image.tag=v3.0.0)"
+if grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$notes_tagged"; then
+  echo "FAIL: NOTES.txt still warned about 0.0.0 with an explicit image.tag set" >&2
+  exit 1
+fi
+echo "ok: NOTES.txt warning is absent with an explicit image.tag"
+
 echo "All nanoidp chart CI checks passed."

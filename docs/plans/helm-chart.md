@@ -548,19 +548,27 @@ findings list.
   the maintainer, not re-provable by `kubeconform`/`yq` alone.
 
 ### Stage D: `NOTES.txt` (findings 3, 8)
-- [ ] `charts/nanoidp/templates/NOTES.txt`: print the resolved image
+- [x] `charts/nanoidp/templates/NOTES.txt`: print the resolved image
   (`repository:tag`, tag defaulting to `.Chart.Version`); when the
   effective tag is exactly `0.0.0`, print an explicit warning that this
   is a publish-time placeholder and installing from a git checkout needs
   `--set image.tag=<release>`. No `fail()`, that would force
   `ci/check.sh` to always pass `--set image.tag=...`, more than this
-  needs. Also print how to reach the instance (the Ingress host if
-  `ingress.create` is true, a `kubectl port-forward` hint otherwise),
-  standard `NOTES.txt` content per Helm chart best practices, folds both
-  findings into the same piece of work.
-- [ ] Tests: `helm template --show-only` (or the equivalent notes
-  rendering) with default values shows the placeholder warning; with
-  `--set image.tag=<something else>` the warning is absent.
+  needs. Also print how to reach the instance: the Ingress URL when
+  `ingress.create` is true; otherwise a plain statement that Ingress
+  isn't enabled and nanoidp isn't reachable from outside the cluster, no
+  `kubectl port-forward` hint, that only actually works for OIDC/SAML
+  testing when the browser and the OAuth client are both on the same
+  machine as whoever runs the command, narrow enough to not be worth
+  suggesting as the general answer. Folds both findings into the same
+  piece of work.
+- [x] Tests: `helm template` does not render `NOTES.txt` at all, only
+  `helm install`/`upgrade` (or `--dry-run=client`) do, discovered while
+  testing; used `helm install ci-check <chart> --dry-run=client` instead.
+  Default values show the placeholder warning; `--set
+  image.tag=v3.0.0` removes it; `ingress.create: true` prints the Ingress
+  URL, the default prints the "Ingress is not enabled" message. Added as
+  permanent assertions in `ci/check.sh`.
 
 ### Stage E: Default `configFiles.users`/`settings`, stop shipping silent emptiness (finding 6)
 - [ ] Decision: make them required and non-empty via
