@@ -183,16 +183,23 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
   with task 8.
 
 ### 3. Config Secret
-- [ ] `templates/config-secret.yaml`: renders `users.yaml`/`settings.yaml`
+- [x] `templates/config-secret.yaml`: renders `users.yaml`/`settings.yaml`
   from `configFiles.users`/`configFiles.settings` into a generated
-  `Secret`, mounted read-only at the config directory; skipped entirely
-  when `configFiles.existingSecret` is set, in which case that Secret name
-  is mounted instead.
-- [ ] Confirm neither generated file's example content sets
-  `config_version` (per the design contract's constraint).
-- [ ] Tests: `helm template` with `configFiles.users`/`settings` set
-  renders the expected Secret; with `configFiles.existingSecret` set, no
-  Secret is rendered and the existing name is referenced on the volume.
+  `Secret`, mounted read-only at `/app/config` (matching the Dockerfile's
+  `NANOIDP_CONFIG_DIR` default, no chart-side env override needed);
+  skipped entirely when `configFiles.existingSecret` is set, in which
+  case that Secret name is mounted instead. Both paths use the same
+  `nanoidp.configSecretName` helper for the name, so the generated
+  Secret's own name and the volume's `secretName` can never drift apart.
+- [x] Confirm neither generated file's example content sets
+  `config_version` (per the design contract's constraint): the
+  `values.yaml` defaults are empty strings, no example content ships yet,
+  that lands with task 7.
+- [x] Tests: verified via `helm template`, with `configFiles.users`/
+  `settings` set the Secret renders with both keys and the Deployment
+  mounts its generated name read-only at `/app/config`; with
+  `configFiles.existingSecret` set, no `Secret` object renders at all and
+  the volume's `secretName` is the existing one instead.
 
 ### 4. Ingress
 - [ ] `templates/ingress.yaml`: rendered only when `ingress.create: true`,

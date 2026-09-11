@@ -72,3 +72,12 @@ Renders nothing if the merged map is empty. Call with
 {{- toYaml $merged }}
 {{- end }}
 {{- end }}
+
+{{/*
+Name of the Secret mounted as the config directory: the user-supplied
+configFiles.existingSecret if set, otherwise the chart's own generated
+Secret name.
+*/}}
+{{- define "nanoidp.configSecretName" -}}
+{{- .Values.configFiles.existingSecret | default (printf "%s-config" (include "nanoidp.fullname" .)) }}
+{{- end }}
