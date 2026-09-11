@@ -136,37 +136,37 @@ echo "=== NOTES.txt ==="
 # helm template does not render NOTES.txt at all, only helm install/
 # upgrade (or --dry-run=client) do.
 
-# Runs `helm install --dry-run=client "$@"` and prints the output on
-# stdout for the caller to capture. Returns 0 with output on success, 1
-# with nothing on stdout (a skip message goes to stderr instead) when
-# Helm 3 has no cluster to talk to, and otherwise prints the failure and
-# exits the whole script, same as any other assertion here.
+# Runs `helm install --dry-run=client "$@"`, leaving its output in
+# $NOTES_OUT for the caller. Must be called outside a command
+# substitution, or its `exit 1` on a genuine failure only ends that
+# subshell instead of the script. Returns 0 on success, 1 (with a skip
+# message on stderr) when Helm 3 has no cluster to talk to, and
+# otherwise prints the failure and exits the whole script, same as any
+# other assertion here.
 notes_or_skip() {
   local desc="$1"
   shift
-  local output
-  if output="$(helm install ci-check "$CHART_DIR" -f "$CI_DIR/values-minimal.yaml" --dry-run=client "$@" 2>&1)"; then
-    printf '%s\n' "$output"
+  if NOTES_OUT="$(helm install ci-check "$CHART_DIR" -f "$CI_DIR/values-minimal.yaml" --dry-run=client "$@" 2>&1)"; then
     return 0
   fi
-  if [ "$HELM_MAJOR" -lt 4 ] && grep -q 'Kubernetes cluster unreachable' <<<"$output"; then
+  if [ "$HELM_MAJOR" -lt 4 ] && grep -q 'Kubernetes cluster unreachable' <<<"$NOTES_OUT"; then
     echo "skip: $desc (Helm $HELM_MAJOR's --dry-run=client needs a reachable cluster; none available here)" >&2
     return 1
   fi
-  printf '%s\n' "$output" >&2
+  printf '%s\n' "$NOTES_OUT" >&2
   echo "FAIL: $desc" >&2
   exit 1
 }
 
-if notes_default="$(notes_or_skip "NOTES.txt (default values)")"; then
-  if ! grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$notes_default"; then
+if notes_or_skip "NOTES.txt (default values)"; then
+  if ! grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$NOTES_OUT"; then
     echo "FAIL: NOTES.txt did not warn about the 0.0.0 placeholder tag with default values" >&2
     exit 1
   fi
   echo "ok: NOTES.txt warns about the 0.0.0 placeholder tag by default"
 
-  notes_tagged="$(notes_or_skip "NOTES.txt (image.tag set)" --set image.tag=v3.0.0)"
-  if grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$notes_tagged"; then
+  notes_or_skip "NOTES.txt (image.tag set)" --set image.tag=v3.0.0
+  if grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$NOTES_OUT"; then
     echo "FAIL: NOTES.txt still warned about 0.0.0 with an explicit image.tag set" >&2
     exit 1
   fi
