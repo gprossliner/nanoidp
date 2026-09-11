@@ -235,21 +235,25 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
   since those didn't have a home elsewhere yet.
 
 ### 6. Getting-started docs
-- [ ] `book/src/getting-started/install.md`: new `## Helm` section, same
-  style as the existing PyPI/Docker/From-source sections, an `helm install`
-  example against `oci://ghcr.io/cdelmonte-zg/charts/nanoidp` with a
-  minimal `values.yaml` (image tag left at its default, a `configFiles`
-  block, `ingress` left disabled), a pointer to `charts/nanoidp/README.md`
-  for the full option list and limitations (single replica, ephemeral
-  keys, Pod Security Standard).
+- [x] `book/src/getting-started/install.md`: new `## Helm` section, same
+  style as the existing PyPI/Docker/From-source sections, the `helm
+  install` command against `oci://ghcr.io/cdelmonte-zg/charts/nanoidp`,
+  then a pointer straight to `charts/nanoidp/README.md` for the working
+  example and the full value/limitation list, no duplicated `values.yaml`
+  snippet or restated limitations here, that's the README's job, this
+  page only mentions the install path exists.
 
 ### 7. Example values.yaml
-- [ ] `charts/nanoidp/values-example.yaml` (or embedded in the README):
-  normal password login by default; `login.mode: persona` and
-  `auto_login: true` present only as commented-out lines with a one-line
-  warning; `oauth.issuer: ${INGRESS_URL}`; a client secret sourced via
-  `env`/`secretKeyRef` rather than inlined, to avoid modeling a
-  committed plaintext secret.
+- [x] Folded into task 5's `charts/nanoidp/README.md`, as a "Complete
+  example" section rather than a separate `values-example.yaml` file:
+  normal password login by default (`login.mode: persona`/`auto_login:
+  true` shown only as commented-out lines with a one-line warning),
+  `oauth.issuer: ${INGRESS_URL}`, one real registered OAuth client, and
+  its `client_secret` sourced via `env`/`secretKeyRef` against a Secret
+  the user creates themselves (`kubectl create secret generic ...`)
+  rather than inlined, with a note that the same Secret can be imported
+  into the client application's own OIDC configuration. Verified via
+  `helm lint`/`helm template` against a copy of the exact example.
 
 ### 8. CI
 - [ ] New workflow `.github/workflows/helm.yml`, matching this repo's
