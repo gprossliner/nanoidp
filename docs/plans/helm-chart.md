@@ -485,7 +485,7 @@ grouped by file overlap and risk profile rather than 1:1 with the
 findings list.
 
 ### Stage A: Config rollout + cleanup (findings 1, 7)
-- [ ] `templates/deployment.yaml`: add a `checksum/config` annotation to
+- [x] `templates/deployment.yaml`: add a `checksum/config` annotation to
   the pod template, computed from the rendered `config-secret.yaml`
   content (the standard Helm idiom:
   `{{ include (print $.Template.BasePath "/config-secret.yaml") . | sha256sum }}`),
@@ -495,18 +495,19 @@ findings list.
   when `existingSecret` is set. `strategy: Recreate` already makes this a
   short gap rather than an overlap, matching the chart's own single-pod
   design.
-- [ ] README: one line stating that with `configFiles.existingSecret`,
+- [x] README: one line stating that with `configFiles.existingSecret`,
   rolling the pod on a config change is the user's own responsibility
   (e.g. their own checksum annotation, or `kubectl rollout restart`).
-- [ ] `templates/_helpers.tpl`: delete the dead
+- [x] `templates/_helpers.tpl`: delete the dead
   `{{- if .Chart.AppVersion }}...{{- end }}` block in `nanoidp.labels`,
   it can never fire, there deliberately is no `appVersion`. Unrelated to
   the checksum fix, bundled here as a trivial, zero-risk cleanup rather
   than its own commit.
-- [ ] Tests: `helm template` with two different `configFiles.users`
+- [x] Tests: `helm template` with two different `configFiles.users`
   values renders two different `checksum/config` annotations; with
   `configFiles.existingSecret` set, no `checksum/config` annotation
-  renders at all; rendered labels otherwise unchanged.
+  renders at all; rendered labels otherwise unchanged. Added as permanent
+  assertions in `ci/check.sh`, full suite passes.
 
 ### Stage B: Authenticate the "Complete example" (finding 2)
 - [ ] README's "Complete example": add `NANOIDP_MANAGEMENT_SECRET` via

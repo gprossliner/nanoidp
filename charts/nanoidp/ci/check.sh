@@ -70,6 +70,19 @@ assert_eq "INGRESS_URL scheme (tls set -> https)" \
   "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "INGRESS_URL") | .value' <<<"$full_tls")" \
   "https://idp.example.com"
 
+full_changed="$(helm template "$CHART_DIR" -f "$CI_DIR/values-full.yaml" --set-string configFiles.users="users:
+  admin:
+    password: admin
+  bob:
+    password: bob")"
+checksum_a="$(yq 'select(.kind == "Deployment") | .spec.template.metadata.annotations."checksum/config"' <<<"$full")"
+checksum_b="$(yq 'select(.kind == "Deployment") | .spec.template.metadata.annotations."checksum/config"' <<<"$full_changed")"
+if [ "$checksum_a" = "$checksum_b" ] || [ -z "$checksum_a" ]; then
+  echo "FAIL: checksum/config did not change with configFiles.users (got '$checksum_a' both times)" >&2
+  exit 1
+fi
+echo "ok: checksum/config changes with configFiles.users"
+
 echo "=== behavioral assertions (values-existing-secret.yaml) ==="
 existing="$(helm template "$CHART_DIR" -f "$CI_DIR/values-existing-secret.yaml")"
 assert_eq "no generated Secret with existingSecret set" \
@@ -77,5 +90,8 @@ assert_eq "no generated Secret with existingSecret set" \
 assert_eq "volume references the existing Secret name" \
   "$(yq 'select(.kind == "Deployment") | .spec.template.spec.volumes[0].secret.secretName' <<<"$existing")" \
   "my-existing-nanoidp-config"
+assert_eq "no checksum/config with existingSecret set" \
+  "$(yq 'select(.kind == "Deployment") | .spec.template.metadata.annotations."checksum/config"' <<<"$existing")" \
+  "null"
 
 echo "All nanoidp chart CI checks passed."

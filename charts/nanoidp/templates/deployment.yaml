@@ -27,9 +27,18 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.podAnnotations }}
+      {{- if or .Values.podAnnotations (not .Values.configFiles.existingSecret) }}
       annotations:
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if not .Values.configFiles.existingSecret }}
+        # Rolls the pod on a configFiles.users/settings change, nanoidp
+        # only reads its config at boot. Not rendered with
+        # configFiles.existingSecret, the chart can't see content it
+        # doesn't own, see the chart README.
+        checksum/config: {{ include (print $.Template.BasePath "/config-secret.yaml") $ | sha256sum }}
+        {{- end }}
       {{- end }}
     spec:
       containers:

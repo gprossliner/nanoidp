@@ -77,10 +77,19 @@ Do not set a `config_version` key in either file: it must be a literal
 integer identical between both files, or the app refuses to start, and
 this chart does not manage it.
 
+A `configFiles.users`/`configFiles.settings` change rolls the pod
+automatically (a `checksum/config` pod annotation, computed from the
+rendered Secret, changes whenever the content does), nanoidp only reads
+its config at boot, so nothing else would pick up the change.
+
 Set `configFiles.existingSecret` to the name of a Secret you manage
 yourself (e.g. rendered by External Secrets, Vault Agent, or an init
 container elsewhere) to skip the generated Secret entirely. That Secret
-must contain the same `users.yaml`/`settings.yaml` keys.
+must contain the same `users.yaml`/`settings.yaml` keys. The automatic
+pod rollout above does not apply here, the chart cannot compute a
+checksum over content it doesn't render, rolling the pod on a change to
+an externally managed Secret is your own responsibility (e.g. your own
+checksum annotation, or `kubectl rollout restart`).
 
 ## Ingress and the issuer
 
