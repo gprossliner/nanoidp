@@ -13,6 +13,9 @@ metadata:
     {{- . | nindent 4 }}
   {{- end }}
 spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
   {{- if .Values.ingress.tls }}
   tls:
     - hosts:

@@ -97,4 +97,23 @@ assert_eq "no checksum/config with existingSecret set" \
   "$(yq 'select(.kind == "Deployment") | .spec.template.metadata.annotations."checksum/config"' <<<"$existing")" \
   "null"
 
+echo "=== behavioral assertions (default values) ==="
+default="$(helm template "$CHART_DIR")"
+assert_eq "securityContext.allowPrivilegeEscalation" \
+  "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation' <<<"$default")" \
+  "false"
+assert_eq "securityContext drops all capabilities" \
+  "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].securityContext.capabilities.drop[0]' <<<"$default")" \
+  "ALL"
+assert_eq "securityContext.seccompProfile" \
+  "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].securityContext.seccompProfile.type' <<<"$default")" \
+  "RuntimeDefault"
+
+with_ingress="$(helm template "$CHART_DIR" --set ingress.create=true --set ingress.host=idp.example.com)"
+assert_eq "no ingressClassName by default" \
+  "$(yq 'select(.kind == "Ingress") | .spec.ingressClassName' <<<"$with_ingress")" "null"
+with_class="$(helm template "$CHART_DIR" --set ingress.create=true --set ingress.host=idp.example.com --set ingress.className=nginx)"
+assert_eq "ingress.className renders as ingressClassName" \
+  "$(yq 'select(.kind == "Ingress") | .spec.ingressClassName' <<<"$with_class")" "nginx"
+
 echo "All nanoidp chart CI checks passed."

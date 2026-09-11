@@ -526,22 +526,22 @@ findings list.
   Deployment's `env` for `values-full.yaml`.
 
 ### Stage C: Hardening knobs, `ingress.className` + `securityContext` (findings 4, 5)
-- [ ] `values.yaml`/`values.schema.json`: add `ingress.className: ""`.
-- [ ] `templates/ingress.yaml`: render `spec.ingressClassName` only when
+- [x] `values.yaml`/`values.schema.json`: add `ingress.className: ""`.
+- [x] `templates/ingress.yaml`: render `spec.ingressClassName` only when
   non-empty.
-- [ ] README: mention `ingress.className`, since ingress-nginx's own
+- [x] README: mention `ingress.className`, since ingress-nginx's own
   chart defaults `watchIngressWithoutClass: false`.
-- [ ] `values.yaml`/`values.schema.json`: add a `securityContext` value
+- [x] `values.yaml`/`values.schema.json`: add a `securityContext` value
   (container-level: `allowPrivilegeEscalation`, `capabilities`,
   `seccompProfile` are container-scoped fields), defaulting to the three
   fields verified live: `allowPrivilegeEscalation: false`,
   `capabilities.drop: ["ALL"]`, `seccompProfile.type: RuntimeDefault`.
   Exposed as a real value, not hardcoded, so a future non-root image can
   add `runAsNonRoot`/`runAsUser` without a template change.
-- [ ] README's Pod Security Standard section: note this narrows the
+- [x] README's Pod Security Standard section: note this narrows the
   `restricted` gap down to just `runAsNonRoot`, the already-agreed
   image-side change, not something this chart can close on its own.
-- [ ] Tests: `helm template` with and without `ingress.className` set;
+- [x] Tests: `helm template` with and without `ingress.className` set;
   default values render the three `securityContext` fields; full
   `ci/check.sh` (kubeconform + assertions) still passes. Real
   `baseline`/`restricted` admission behavior was already verified live by

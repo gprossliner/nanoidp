@@ -21,6 +21,17 @@ resources: {}
 podLabels: {}
 podAnnotations: {}
 
+# Verified against namespaces enforcing both the baseline and restricted
+# Pod Security Standards: these three fields keep baseline working and
+# narrow restricted down to just runAsNonRoot, an image-side change (no
+# USER in the Dockerfile) this chart can't close on its own.
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
 service:
   type: ClusterIP
   labels: {}
@@ -31,6 +42,7 @@ service:
 ingress:
   create: false
   host: ""
+  className: ""
   labels: {}
   annotations: {}
   tls: {}

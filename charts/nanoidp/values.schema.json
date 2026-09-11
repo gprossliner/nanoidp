@@ -30,6 +30,9 @@
     "podAnnotations": {
       "type": "object"
     },
+    "securityContext": {
+      "type": "object"
+    },
     "service": {
       "type": "object",
       "properties": {
@@ -47,6 +50,7 @@
       "properties": {
         "create": { "type": "boolean" },
         "host": { "type": "string" },
+        "className": { "type": "string" },
         "labels": { "type": "object" },
         "annotations": { "type": "object" },
         "tls": { "type": "object" }

@@ -50,7 +50,13 @@ the chart.
 ### Pod Security Standard: `baseline`, not `restricted`
 
 This chart targets the `baseline` Pod Security Standard, not
-`restricted`. Running it in a namespace enforcing `restricted` will fail.
+`restricted`. Running it in a namespace enforcing `restricted` will fail
+on `runAsNonRoot`, the image has no `USER` directive, an image-side
+change outside this chart's scope. The default `securityContext`
+(`allowPrivilegeEscalation: false`, dropping all capabilities,
+`seccompProfile: RuntimeDefault`) already covers everything else
+`restricted` checks, verified against namespaces enforcing both
+standards.
 
 ## Configuration files (`configFiles`)
 
@@ -92,6 +98,11 @@ an externally managed Secret is your own responsibility (e.g. your own
 checksum annotation, or `kubectl rollout restart`).
 
 ## Ingress and the issuer
+
+Set `ingress.className` to your cluster's IngressClass name. Most
+ingress controllers (e.g. ingress-nginx's own chart) default to ignoring
+an Ingress with no class set, rather than falling back to the deprecated
+`kubernetes.io/ingress.class` annotation.
 
 OIDC requires the issuer advertised in discovery and tokens to match the
 URL clients actually reach nanoidp at. Since `configFiles.settings` is
