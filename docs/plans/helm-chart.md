@@ -221,7 +221,7 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
   render with the guard's message instead of producing an empty host.
 
 ### 5. Chart README
-- [ ] `charts/nanoidp/README.md` covering, per the design contract above:
+- [x] `charts/nanoidp/README.md` covering, per the design contract above:
   single-replica limitation and why; versioning convention (`version` ==
   nanoidp release) and the chart-only-patch escape hatch; the read-only
   config mount's actual failure mode (a surfaced OS error, not a crash);
@@ -231,6 +231,8 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
   TLS-terminates-upstream topologies; Pod Security Standard `baseline`
   (image runs as root); the security warning that nanoidp is a test IdP
   and an Ingress belongs on an internal network or behind an auth proxy.
+  Also covers installation and `configFiles`/`existingSecret` usage,
+  since those didn't have a home elsewhere yet.
 
 ### 6. Getting-started docs
 - [ ] `book/src/getting-started/install.md`: new `## Helm` section, same
