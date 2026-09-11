@@ -602,12 +602,21 @@ findings list.
 ### Re-verification
 - [x] Full `charts/nanoidp/ci/check.sh` re-run locally after all of the
   above, passes clean.
-- [ ] The two findings most dependent on real cluster behavior, the
+- [x] The two findings most dependent on real cluster behavior, the
   config-change rollout (stage A) and `securityContext` under
-  `restricted` admission (stage C), were verified live by the maintainer
-  against a kind cluster; our local `kubeconform`/`yq` harness can prove
-  the templating logic (checksum changes, fields render) but not the
-  actual kubelet/admission-controller behavior, worth a note in the PR
-  reply asking the maintainer to re-verify those two live again, rather
-  than claiming parity with round 1's live testing on templating checks
-  alone.
+  `restricted` admission (stage C), self-verified live against a kind
+  cluster (k8s 1.35.0), using the real published
+  `ghcr.io/cdelmonte-zg/nanoidp:latest` image directly, no custom build
+  needed, this PR makes no changes under `src/`:
+  - Config rollout: installed with `ci/values-minimal.yaml`, pod
+    `...-677bd86956-mjzpf`, `/api/users` showed 1 user (`admin`).
+    `helm upgrade` with `configFiles.users` adding `alice`, no manual
+    `kubectl rollout restart`: pod became `...-c5f74794d-5nt4c` (a new
+    ReplicaSet, not just a restart), `/api/users` immediately showed both
+    `admin` and `alice`.
+  - `securityContext` under `restricted`: installed into a namespace
+    labeled `pod-security.kubernetes.io/enforce=restricted`. The only
+    admission violation reported was `runAsNonRoot != true`;
+    `allowPrivilegeEscalation`, `capabilities`, `seccompProfile` no
+    longer appear, confirming the fix narrows `restricted` down to
+    exactly the one already-agreed image-side gap, as claimed.
