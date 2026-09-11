@@ -510,18 +510,18 @@ findings list.
   assertions in `ci/check.sh`, full suite passes.
 
 ### Stage B: Authenticate the "Complete example" (finding 2)
-- [ ] README's "Complete example": add `NANOIDP_MANAGEMENT_SECRET` via
+- [x] README's "Complete example": add `NANOIDP_MANAGEMENT_SECRET` via
   `env`/`secretKeyRef` (same `kubectl create secret` step already there,
   one more key) and `session.require_ui_login: true` in the
   `configFiles.settings` block. Note the verified behavior: mutating
   endpoints return `401`, `/api/health` and
   `/.well-known/openid-configuration` stay `200`.
-- [ ] `charts/nanoidp/ci/values-full.yaml`: mirror the same two additions,
+- [x] `charts/nanoidp/ci/values-full.yaml`: mirror the same two additions,
   so the CI fixture and the README's complete example stay in sync (the
   existing invariant between them).
-- [ ] No template/chart code changes in this stage, docs and CI fixture
+- [x] No template/chart code changes in this stage, docs and CI fixture
   content only.
-- [ ] Tests: re-run `charts/nanoidp/ci/check.sh`, add a rendered-output
+- [x] Tests: re-run `charts/nanoidp/ci/check.sh`, add a rendered-output
   assertion that `NANOIDP_MANAGEMENT_SECRET` is present in the
   Deployment's `env` for `values-full.yaml`.
 

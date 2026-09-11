@@ -132,12 +132,13 @@ The snippets above show what individual values look like. This is a
 OAuth client, and the client secret kept out of `configFiles.settings`
 entirely by sourcing it from a Kubernetes Secret you create yourself.
 
-First, create the Secret holding the client secret (any key name, `env`
-below just has to reference the same one):
+First, create the Secret holding the client secret and a management
+secret (any key names, `env` below just has to reference the same ones):
 
 ```bash
 kubectl create secret generic nanoidp-client-secret \
-  --from-literal=secret=$(openssl rand -base64 32)
+  --from-literal=secret=$(openssl rand -base64 32) \
+  --from-literal=management-secret=$(openssl rand -base64 32)
 ```
 
 You can import this same Secret into your application's own OIDC client
@@ -157,6 +158,15 @@ env:
       secretKeyRef:
         name: nanoidp-client-secret
         key: secret
+  # nanoidp's /api/* management endpoints are unauthenticated by design
+  # otherwise, this gates mutations (rotating keys, minting tokens for
+  # any user, clearing the audit log) behind a shared secret. Safe
+  # methods (/api/health, discovery) are unaffected.
+  - name: NANOIDP_MANAGEMENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: nanoidp-client-secret
+        key: management-secret
 
 configFiles:
   users: |
@@ -165,6 +175,11 @@ configFiles:
         password: admin
 
   settings: |
+    session:
+      # Same reasoning as NANOIDP_MANAGEMENT_SECRET above, this gates
+      # the settings/users/clients/keys/audit UI behind /login.
+      require_ui_login: true
+
     login:
       mode: password
       # WARNING: only enable persona/auto_login on a network nobody
@@ -186,6 +201,11 @@ configFiles:
 This example omits `ingress.tls` for simplicity, so `INGRESS_URL` resolves
 to `http://idp.example.com`, set `ingress.tls.secretName` (with a
 certificate Secret of your own) to switch it to `https://` automatically.
+
+With both `NANOIDP_MANAGEMENT_SECRET` and `session.require_ui_login` set,
+mutating requests without the shared secret/a session get `401`/redirected
+to `/login`, `/api/health` and `/.well-known/openid-configuration` keep
+returning `200`, so probes and discovery are unaffected.
 
 After `helm install`/`helm upgrade`,
 `http://idp.example.com/.well-known/openid-configuration` serves

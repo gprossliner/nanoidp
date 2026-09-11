@@ -64,6 +64,9 @@ assert_eq "INGRESS_HOST injected" \
 assert_eq "INGRESS_URL scheme (no tls -> http)" \
   "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "INGRESS_URL") | .value' <<<"$full")" \
   "http://idp.example.com"
+assert_eq "NANOIDP_MANAGEMENT_SECRET present (complete example is authenticated)" \
+  "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "NANOIDP_MANAGEMENT_SECRET") | .name' <<<"$full")" \
+  "NANOIDP_MANAGEMENT_SECRET"
 
 full_tls="$(helm template "$CHART_DIR" -f "$CI_DIR/values-full.yaml" --set ingress.tls.secretName=idp-tls)"
 assert_eq "INGRESS_URL scheme (tls set -> https)" \

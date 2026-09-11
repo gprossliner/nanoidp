@@ -8,6 +8,8 @@ ingress:
 env:
   - name: CLIENT_SECRET
     value: "ci-placeholder-secret"
+  - name: NANOIDP_MANAGEMENT_SECRET
+    value: "ci-placeholder-management-secret"
 
 configFiles:
   users: |
@@ -16,6 +18,9 @@ configFiles:
         password: admin
 
   settings: |
+    session:
+      require_ui_login: true
+
     login:
       mode: password
 
