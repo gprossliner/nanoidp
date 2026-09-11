@@ -19,3 +19,5 @@
 .idea/
 *.tmproj
 .vscode/
+# CI-only fixtures/script, not part of the distributed chart
+ci/

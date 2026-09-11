@@ -119,8 +119,11 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
 
 ### 1. Chart scaffold
 - [x] `charts/nanoidp/Chart.yaml`: `apiVersion: v2`, `name: nanoidp`, single
-  `version` field, set to match the current nanoidp release version in
-  our sample (e.g. `3.0.0`), no `appVersion`.
+  `version` field, no `appVersion`. Committed as `0.0.0`, a placeholder,
+  not a real release version, see the closing note at the end of this
+  plan: the real version is set at publish time from the git tag, via
+  `helm package --version`, since Helm requires the field to be a valid,
+  non-empty SemVer string and there's no way to omit or defer it.
 - [x] `charts/nanoidp/.helmignore`, `charts/nanoidp/templates/_helpers.tpl`
   (standard `nanoidp.fullname`, `nanoidp.labels`, `nanoidp.selectorLabels`
   helpers, following Helm chart best practices). Also added
@@ -175,9 +178,10 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
   `nanoidp.mergedAnnotations` with `.Values.service.labels`/
   `.Values.service.annotations` as the resource-specific `extra`.
 - [x] Tests: verified via `helm lint`/`helm template` runs (default
-  values: `replicas: 1`, `Recreate`, no `INGRESS_*` vars, tag `3.0.0`;
-  `ingress.host` set without `ingress.tls`: `INGRESS_URL` is `http://...`;
-  with `ingress.tls.secretName` set: `https://...`; `service.type`/
+  values: `replicas: 1`, `Recreate`, no `INGRESS_*` vars, tag defaulting
+  to `.Chart.Version`; `ingress.host` set without `ingress.tls`:
+  `INGRESS_URL` is `http://...`; with `ingress.tls.secretName` set:
+  `https://...`; `service.type`/
   `labels`/`annotations` overrides render correctly). No `helm unittest`/
   snapshot harness introduced yet, formal CI-integrated assertions land
   with task 8.
@@ -318,9 +322,66 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
 ## Closing note: OCI publish workflow
 
 Not part of this PR, the maintainer runs that workflow himself and we have
-no influence over its shape, so it stays out of this plan entirely. What
-we do provide is the example: `Chart.yaml`'s `version` set to match the
-current nanoidp release (`3.0.0`), demonstrating the versioning convention
-agreed in the design contract above, chart version equals the nanoidp
-release it ships, for whichever release automation the maintainer builds
-around it.
+no influence over its shape, so it stays out of this plan entirely.
+
+`Chart.yaml`'s committed `version: 0.0.0` is a placeholder, not the real
+version. Helm requires `version` to be set to a valid, non-empty SemVer 2
+string (there is no way to omit it or defer it, filed upstream as
+[helm/helm#32143](https://github.com/helm/helm/issues/32143)), but the
+real chart version must come from the git tag at publish time, not a
+value committed to the repo, otherwise every release needs a
+`Chart.yaml` edit commit, and the version is either set before the tag
+exists or has to be back-filled after, neither of which is tag-friendly.
+`0.0.0` is a clearly-a-placeholder value that will never collide with a
+real release.
+
+A rough sketch, offered only as an optional starting point, not committed
+as an actual file, mirroring `docker.yml`'s tag-triggered publish as closely
+as sensible: same `push: tags: 'v*'` trigger, same source of truth
+(`github.ref_name`, the pushed tag). No `docker/metadata-action`-style
+`type=raw,value=latest` equivalent is needed, an OCI Helm chart registry
+has no "latest" tag convention/consumer the way `docker pull image:latest`
+does, so only the tag-derived version matters. `github.ref_name` includes
+the tag's leading `v` (e.g. `v3.0.0`), which is invalid SemVer for
+`--version`, so it's stripped once with a `sed` into a job output before
+either publish step uses it:
+
+```yaml
+name: Publish Helm Chart
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish-chart:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Chart version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package chart
+        run: |
+          helm package charts/nanoidp \
+            --version "${{ steps.version.outputs.version }}" \
+            --destination .helm-dist
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username ${{ github.actor }} --password-stdin
+
+      - name: Push chart
+        run: |
+          helm push .helm-dist/nanoidp-*.tgz oci://ghcr.io/cdelmonte-zg/charts
+```
