@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Lint, template, and validate the nanoidp chart: helm lint/template
+# against default values and every fixture under charts/nanoidp/ci/,
+# kubeconform validation of the rendered manifests against the real
+# Kubernetes API schema (no cluster involved), the values.schema.json
+# rejection check, and a handful of chart-specific behavioral assertions.
+#
+# Runs identically locally and in .github/workflows/helm.yml. Locally,
+# install the two extra tools once (e.g. `brew install kubeconform yq`).
+set -euo pipefail
+
+CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CI_DIR="$CHART_DIR/ci"
+
+for tool in helm kubeconform yq; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "error: '$tool' is required on PATH (e.g. 'brew install $tool')" >&2
+    exit 1
+  fi
+done
+
+# Kubernetes version the rendered manifests are validated against.
+K8S_VERSION="${K8S_VERSION:-1.30.0}"
+
+check_values() {
+  local label="$1"
+  shift
+  echo "=== $label ==="
+  helm lint "$CHART_DIR" "$@"
+  helm template "$CHART_DIR" "$@" >/tmp/nanoidp-rendered.yaml
+  kubeconform -strict -kubernetes-version "$K8S_VERSION" -summary /tmp/nanoidp-rendered.yaml
+}
+
+check_values "default values"
+for values in "$CI_DIR"/*.yaml; do
+  check_values "$(basename "$values")" -f "$values"
+done
+
+echo "=== values.schema.json rejects a bad type ==="
+if helm template "$CHART_DIR" --set ingress.create=yes >/dev/null 2>&1; then
+  echo "expected values.schema.json to reject ingress.create=yes, but it rendered" >&2
+  exit 1
+fi
+echo "ok: ingress.create=yes rejected"
+
+assert_eq() {
+  local desc="$1" actual="$2" expected="$3"
+  if [ "$actual" != "$expected" ]; then
+    echo "FAIL: $desc: expected '$expected', got '$actual'" >&2
+    exit 1
+  fi
+  echo "ok: $desc"
+}
+
+echo "=== behavioral assertions (values-full.yaml) ==="
+full="$(helm template "$CHART_DIR" -f "$CI_DIR/values-full.yaml")"
+assert_eq "single replica" \
+  "$(yq 'select(.kind == "Deployment") | .spec.replicas' <<<"$full")" "1"
+assert_eq "Recreate strategy" \
+  "$(yq 'select(.kind == "Deployment") | .spec.strategy.type' <<<"$full")" "Recreate"
+assert_eq "INGRESS_HOST injected" \
+  "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "INGRESS_HOST") | .value' <<<"$full")" \
+  "idp.example.com"
+assert_eq "INGRESS_URL scheme (no tls -> http)" \
+  "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "INGRESS_URL") | .value' <<<"$full")" \
+  "http://idp.example.com"
+
+full_tls="$(helm template "$CHART_DIR" -f "$CI_DIR/values-full.yaml" --set ingress.tls.secretName=idp-tls)"
+assert_eq "INGRESS_URL scheme (tls set -> https)" \
+  "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "INGRESS_URL") | .value' <<<"$full_tls")" \
+  "https://idp.example.com"
+
+echo "=== behavioral assertions (values-existing-secret.yaml) ==="
+existing="$(helm template "$CHART_DIR" -f "$CI_DIR/values-existing-secret.yaml")"
+assert_eq "no generated Secret with existingSecret set" \
+  "$(yq 'select(.kind == "Secret") | .kind' <<<"$existing" | wc -l | tr -d ' ')" "0"
+assert_eq "volume references the existing Secret name" \
+  "$(yq 'select(.kind == "Deployment") | .spec.template.spec.volumes[0].secret.secretName' <<<"$existing")" \
+  "my-existing-nanoidp-config"
+
+echo "All nanoidp chart CI checks passed."

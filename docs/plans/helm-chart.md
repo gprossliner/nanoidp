@@ -256,15 +256,54 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
   `helm lint`/`helm template` against a copy of the exact example.
 
 ### 8. CI
-- [ ] New workflow `.github/workflows/helm.yml`, matching this repo's
-  existing conventions (`tests.yml`, `docker.yml`, `publish.yml`): trigger
-  on `pull_request: branches: [main, "stack/**"]` and
-  `push: branches: [main]`, no path filter (none of the existing workflows
-  scope by changed-path either, so a helm-only PR gets the same CI
-  visibility as any other). `runs-on: ubuntu-latest`, install Helm via
-  `azure/setup-helm` (or equivalent), then `helm lint charts/nanoidp` and
-  `helm template charts/nanoidp` against two or three example values
-  files.
+- [x] `.github/workflows/helm.yml`, matching this repo's existing
+  conventions (`tests.yml`, `docker.yml`, `publish.yml`): trigger on
+  `pull_request: branches: [main, "stack/**"]` and `push: branches:
+  [main]`, no path filter (none of the existing workflows scope by
+  changed-path either, so a helm-only PR gets the same CI visibility as
+  any other). `runs-on: ubuntu-latest`. Worth knowing: per the
+  [runner-images Ubuntu 24.04 software list](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md),
+  `ubuntu-latest` already ships Helm (3.21.4) and `yq` (4.53.6)
+  preinstalled, `kubeconform` does not. We still install Helm explicitly
+  via `azure/setup-helm` rather than relying on the runner's version,
+  so the exact version is pinned and doesn't drift if GitHub bumps the
+  runner image; `kubeconform` is installed as a pinned static Linux
+  binary (curled directly from its GitHub release, no cluster and no
+  package-manager bootstrap needed), matching the version verified
+  locally (v0.7.0). The actual checks live in
+  `charts/nanoidp/ci/check.sh`, runnable identically locally (once
+  `kubeconform`/`yq` are on `PATH`, e.g. `brew install kubeconform yq`)
+  or from CI, so there's one source of truth instead of duplicated
+  inline shell:
+  - `helm lint`/`helm template` against default values and three fixture
+    files under `charts/nanoidp/ci/` (a `ci/` directory of values
+    overrides is also the convention Helm's own `chart-testing`/`ct` tool
+    looks for, so this stays adoptable by that tool later without
+    renaming anything): `values-minimal.yaml` (just enough `configFiles`
+    to boot), `values-full.yaml` (the README's complete example: Ingress,
+    env-sourced client secret, a real OAuth client),
+    `values-existing-secret.yaml` (`configFiles.existingSecret` path).
+  - Every rendered manifest set piped through `kubeconform -strict`
+    against the real Kubernetes v1.30.0 OpenAPI schema, no cluster
+    involved, catches structural mistakes (wrong types, missing required
+    fields, invalid `apiVersion`/`kind`) that `values.schema.json` can't,
+    since that only validates the *input* values, not the *output*
+    manifests. Deliberately no `kind`/real-cluster dry-run: that would add
+    real CI time and complexity this small a chart doesn't need.
+  - `values.schema.json` re-confirmed enforced (`ingress.create: "yes"`
+    as a string must fail).
+  - A handful of chart-specific behavioral assertions via `yq`, formalizing
+    what was checked by hand during implementation rather than adding a
+    `helm-unittest` plugin dependency for v1: single replica, `Recreate`
+    strategy, `INGRESS_HOST`/`INGRESS_URL` injection and scheme (both
+    `http`, no `ingress.tls`, and `https`, `ingress.tls.secretName` set),
+    `existingSecret` skipping the generated `Secret` and being referenced
+    on the volume.
+- [x] Note for the maintainer: there is a [`setup-kubeconform`
+  marketplace action](https://github.com/marketplace/actions/setup-kubeconform).
+  Not used here, it's a small, not particularly popular third-party
+  action for a one-line `curl` we already control directly and can pin
+  precisely; mentioned in case the maintainer prefers it instead.
 - [x] Not added as an actual file in this PR, since the maintainer said
   he'd own this side of the release checklist ("I will handle that
   side"). He runs that workflow, so we have no influence over its shape,
