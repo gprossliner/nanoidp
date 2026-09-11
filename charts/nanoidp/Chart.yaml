@@ -1,0 +1,8 @@
+apiVersion: v2
+name: nanoidp
+description: A configurable mock Identity Provider for testing OAuth2/OIDC and SAML integrations.
+type: application
+version: 3.0.0
+home: https://github.com/cdelmonte-zg/nanoidp
+sources:
+  - https://github.com/cdelmonte-zg/nanoidp

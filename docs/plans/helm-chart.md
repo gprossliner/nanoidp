@@ -118,23 +118,34 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
 ## Breakdown into commits (single feature branch / PR)
 
 ### 1. Chart scaffold
-- [ ] `charts/nanoidp/Chart.yaml`: `apiVersion: v2`, `name: nanoidp`, single
+- [x] `charts/nanoidp/Chart.yaml`: `apiVersion: v2`, `name: nanoidp`, single
   `version` field, set to match the current nanoidp release version in
   our sample (e.g. `3.0.0`), no `appVersion`.
-- [ ] `charts/nanoidp/.helmignore`, `charts/nanoidp/templates/_helpers.tpl`
+- [x] `charts/nanoidp/.helmignore`, `charts/nanoidp/templates/_helpers.tpl`
   (standard `nanoidp.fullname`, `nanoidp.labels`, `nanoidp.selectorLabels`
-  helpers, following Helm chart best practices).
-- [ ] `charts/nanoidp/values.yaml` skeleton: `image.repository`/`tag`/
-  `pullPolicy`, `resources`, `podLabels`, `podAnnotations`, `ingress` block
-  (`create: false`, `host: ""`, `annotations: {}`, `tls: {}`), `env: []`,
-  `configFiles` block (`existingSecret: ""`, `users: ""`, `settings: ""`).
-- [ ] `charts/nanoidp/values.schema.json`: types and required fields for
-  every key above (`ingress.create` boolean, `image.repository`/`tag`
-  strings, `configFiles.users`/`settings`/`existingSecret` strings, no
-  validation of the YAML inside the multiline string fields, that's out of
-  schema's reach by design). Keep in sync with `values.yaml` by hand for
-  v1, no codegen tool introduced in this PR.
-- [ ] Tests: `helm lint` (already planned under CI) exercises schema
+  helpers, following Helm chart best practices). Also added
+  `nanoidp.mergedLabels`/`nanoidp.mergedAnnotations`, merging chart-managed
+  labels, `commonLabels`/`commonAnnotations`, and a resource's own
+  `labels`/`annotations` (later wins on key collision), verified at
+  runtime against a throwaway template before being removed.
+- [x] `charts/nanoidp/values.yaml` skeleton: `image.repository`/`tag`/
+  `pullPolicy`, `resources`, `podLabels`/`podAnnotations` (kept flat at
+  root, matching `resources`/`env`/`envFrom`, they describe the one
+  always-present pod template, not a separate optional resource, so they
+  follow the near-universal Helm convention rather than nesting under a
+  `pod:` key), `commonLabels`/`commonAnnotations` (applied to every
+  resource), `service` block (`type: ClusterIP`, `labels`, `annotations`),
+  `ingress` block (`create: false`, `host: ""`, `labels: {}`,
+  `annotations: {}`, `tls: {}`), `env: []`/`envFrom: []`, `configFiles`
+  block (`existingSecret: ""`, `users: ""`, `settings: ""`).
+- [x] `charts/nanoidp/values.schema.json`: types and required fields for
+  every key above (`ingress.create` boolean, `service.type` enum,
+  `image.repository`/`tag` strings, `configFiles.users`/`settings`/
+  `existingSecret` strings, no validation of the YAML inside the
+  multiline string fields, that's out of schema's reach by design). Keep
+  in sync with `values.yaml` by hand for v1, no codegen tool introduced
+  in this PR.
+- [x] Tests: `helm lint` (already planned under CI) exercises schema
   validation implicitly; add one `helm template` case with a deliberately
   wrong type (e.g. `ingress.create: "yes"` as a string) asserting Helm
   rejects it, so the schema's presence is itself pinned by a test.
@@ -144,17 +155,24 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
   `replicaCount` value read anywhere), `strategy.type: Recreate`,
   `image`/`tag`/`pullPolicy` from values, `env`/`envFrom` passthrough,
   `resources`, pod labels/annotations, `startupProbe` +
-  `livenessProbe`/`readinessProbe` on `/api/health`. No `securityContext`
-  hardening that assumes non-root. Probe timing: conservative defaults,
-  not tuned against measured startup, nanoidp has no known history of a
-  slow boot, e.g. `startupProbe` with `periodSeconds: 2`,
-  `failureThreshold: 15` (up to ~30s to become ready before liveness takes
-  over), `livenessProbe`/`readinessProbe` with `periodSeconds: 10`. Subject
-  to the usual review round.
+  `livenessProbe`/`readinessProbe` on `/api/health`. Deployment's own
+  metadata uses `nanoidp.mergedLabels`/`nanoidp.mergedAnnotations` (with
+  no per-resource `extra`, just chart-managed + `commonLabels`/
+  `commonAnnotations`); the pod template keeps `podLabels`/
+  `podAnnotations` as-is (selector labels never merged with user input).
+  No `securityContext` hardening that assumes non-root. Probe timing:
+  conservative defaults, not tuned against measured startup, nanoidp has
+  no known history of a slow boot, e.g. `startupProbe` with
+  `periodSeconds: 2`, `failureThreshold: 15` (up to ~30s to become ready
+  before liveness takes over), `livenessProbe`/`readinessProbe` with
+  `periodSeconds: 10`. Subject to the usual review round.
 - [ ] Auto-inject `INGRESS_HOST`/`INGRESS_URL` env vars into the container
   when `.Values.ingress.host` is set; `INGRESS_URL` scheme is `https` when
   `.Values.ingress.tls` is non-empty, `http` otherwise.
-- [ ] `templates/service.yaml`: ClusterIP Service on the app's port.
+- [ ] `templates/service.yaml`: `service.type` (default `ClusterIP`) on
+  the app's port, metadata via `nanoidp.mergedLabels`/
+  `nanoidp.mergedAnnotations` with `.Values.service.labels`/
+  `.Values.service.annotations` as the resource-specific `extra`.
 - [ ] Tests: `helm template` snapshot/golden-file style tests (or a
   `helm unittest` suite if the project prefers) covering single-replica
   hardcoding, `Recreate` strategy, and the `INGRESS_HOST`/`INGRESS_URL`
@@ -174,7 +192,9 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
 
 ### 4. Ingress
 - [ ] `templates/ingress.yaml`: rendered only when `ingress.create: true`,
-  using `ingress.host`, `ingress.annotations`, `ingress.tls`.
+  using `ingress.host`, `ingress.tls`, and metadata via
+  `nanoidp.mergedLabels`/`nanoidp.mergedAnnotations` with
+  `.Values.ingress.labels`/`.Values.ingress.annotations` as the extra.
 - [ ] Tests: `helm template` with `ingress.create: false` (default) renders
   no Ingress object at all.
 
