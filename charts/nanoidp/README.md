@@ -66,6 +66,10 @@ Helm values) into a generated Secret and mounted read-only into the
 container. A `Secret`, not a `ConfigMap`, is used because `settings.yaml`
 carries client secrets.
 
+`configFiles.users`/`configFiles.settings` are mandatory (`helm
+install`/`lint`/`template` refuses an empty default) unless
+`configFiles.existingSecret` is set instead.
+
 ```yaml
 configFiles:
   users: |

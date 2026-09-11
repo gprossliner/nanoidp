@@ -69,6 +69,16 @@
         "existingSecret": { "type": "string" },
         "users": { "type": "string" },
         "settings": { "type": "string" }
+      },
+      "if": {
+        "properties": { "existingSecret": { "const": "" } }
+      },
+      "then": {
+        "required": ["users", "settings"],
+        "properties": {
+          "users": { "minLength": 1 },
+          "settings": { "minLength": 1 }
+        }
       }
     }
   },

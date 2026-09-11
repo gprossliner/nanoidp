@@ -31,7 +31,6 @@ check_values() {
   kubeconform -strict -kubernetes-version "$K8S_VERSION" -summary /tmp/nanoidp-rendered.yaml
 }
 
-check_values "default values"
 for values in "$CI_DIR"/*.yaml; do
   check_values "$(basename "$values")" -f "$values"
 done
@@ -42,6 +41,13 @@ if helm template "$CHART_DIR" --set ingress.create=yes >/dev/null 2>&1; then
   exit 1
 fi
 echo "ok: ingress.create=yes rejected"
+
+echo "=== values.schema.json requires configFiles.users/settings unless existingSecret is set ==="
+if helm template "$CHART_DIR" >/dev/null 2>&1; then
+  echo "expected values.schema.json to reject empty configFiles.users/settings with no existingSecret, but it rendered" >&2
+  exit 1
+fi
+echo "ok: empty configFiles.users/settings rejected (bare default values)"
 
 assert_eq() {
   local desc="$1" actual="$2" expected="$3"
@@ -97,8 +103,8 @@ assert_eq "no checksum/config with existingSecret set" \
   "$(yq 'select(.kind == "Deployment") | .spec.template.metadata.annotations."checksum/config"' <<<"$existing")" \
   "null"
 
-echo "=== behavioral assertions (default values) ==="
-default="$(helm template "$CHART_DIR")"
+echo "=== behavioral assertions (values-minimal.yaml) ==="
+default="$(helm template "$CHART_DIR" -f "$CI_DIR/values-minimal.yaml")"
 assert_eq "securityContext.allowPrivilegeEscalation" \
   "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation' <<<"$default")" \
   "false"
@@ -109,24 +115,24 @@ assert_eq "securityContext.seccompProfile" \
   "$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].securityContext.seccompProfile.type' <<<"$default")" \
   "RuntimeDefault"
 
-with_ingress="$(helm template "$CHART_DIR" --set ingress.create=true --set ingress.host=idp.example.com)"
+with_ingress="$(helm template "$CHART_DIR" -f "$CI_DIR/values-minimal.yaml" --set ingress.create=true --set ingress.host=idp.example.com)"
 assert_eq "no ingressClassName by default" \
   "$(yq 'select(.kind == "Ingress") | .spec.ingressClassName' <<<"$with_ingress")" "null"
-with_class="$(helm template "$CHART_DIR" --set ingress.create=true --set ingress.host=idp.example.com --set ingress.className=nginx)"
+with_class="$(helm template "$CHART_DIR" -f "$CI_DIR/values-minimal.yaml" --set ingress.create=true --set ingress.host=idp.example.com --set ingress.className=nginx)"
 assert_eq "ingress.className renders as ingressClassName" \
   "$(yq 'select(.kind == "Ingress") | .spec.ingressClassName' <<<"$with_class")" "nginx"
 
 echo "=== NOTES.txt ==="
 # helm template does not render NOTES.txt at all, only helm install/
 # upgrade (or --dry-run=client) do.
-notes_default="$(helm install ci-check "$CHART_DIR" --dry-run=client)"
+notes_default="$(helm install ci-check "$CHART_DIR" -f "$CI_DIR/values-minimal.yaml" --dry-run=client)"
 if ! grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$notes_default"; then
   echo "FAIL: NOTES.txt did not warn about the 0.0.0 placeholder tag with default values" >&2
   exit 1
 fi
 echo "ok: NOTES.txt warns about the 0.0.0 placeholder tag by default"
 
-notes_tagged="$(helm install ci-check "$CHART_DIR" --dry-run=client --set image.tag=v3.0.0)"
+notes_tagged="$(helm install ci-check "$CHART_DIR" -f "$CI_DIR/values-minimal.yaml" --dry-run=client --set image.tag=v3.0.0)"
 if grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$notes_tagged"; then
   echo "FAIL: NOTES.txt still warned about 0.0.0 with an explicit image.tag set" >&2
   exit 1

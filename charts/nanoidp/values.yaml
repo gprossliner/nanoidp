@@ -55,7 +55,10 @@ envFrom: []
 
 # configFiles controls the generated config Secret (a Secret, not a
 # ConfigMap, since settings.yaml carries client secrets). users/settings
-# are written verbatim, so they are plain YAML text, not structured values.
+# are written verbatim, so they are plain YAML text, not structured
+# values. Required (non-empty) unless existingSecret is set, an empty
+# mount would shadow the image's own bundled demo config and boot with
+# zero users/clients rather than falling back to it.
 configFiles:
   # When set, skips the generated Secret and mounts this existing one
   # instead. It must contain the same users.yaml/settings.yaml keys.

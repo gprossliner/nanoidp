@@ -571,29 +571,37 @@ findings list.
   permanent assertions in `ci/check.sh`.
 
 ### Stage E: Default `configFiles.users`/`settings`, stop shipping silent emptiness (finding 6)
-- [ ] Decision: make them required and non-empty via
+- [x] Decision: make them required and non-empty via
   `values.schema.json`, conditioned on `configFiles.existingSecret` being
   unset (JSON Schema `if`/`then`, draft-07, which the declared
   `$schema` already targets), consistent with this chart's existing
   "fail loud instead of silently misbehaving" pattern (the Ingress
-  empty-host `fail()`, the issuer validator). Verify empirically first
-  that Helm's schema validator actually enforces `if`/`then` before
-  committing to this shape, fall back to defaulting both keys to
-  `ci/values-minimal.yaml`'s content if it does not. Kept isolated from
-  the other stages since it needs that empirical check first and may
-  need reworking.
-- [ ] If the conditional schema works: a bare `helm lint`/`helm template`
-  with no values now fails by design, update `ci/check.sh`'s "default
-  values" step to assert that failure (same shape as the existing
-  `ingress.create: "yes"` rejection check), rather than expecting it to
-  render.
-- [ ] README: state plainly that `configFiles` is mandatory (unless
-  `existingSecret` is set) and why, the mounted Secret always shadows the
-  image's bundled demo config, so an empty mount is worse than no mount.
+  empty-host `fail()`, the issuer validator). Verified empirically that
+  Helm's schema validator does enforce `if`/`then`: with the conditional
+  added, a bare `helm lint` now fails with
+  `at '/configFiles/users': minLength: got 0, want 1` (and the same for
+  `settings`), while all three `ci/` fixtures still pass unaffected
+  (`values-minimal.yaml`/`values-full.yaml` already set both,
+  `values-existing-secret.yaml`'s `existingSecret` makes the `if`
+  condition false). No fallback needed.
+- [x] A bare `helm lint`/`helm template` with no values now fails by
+  design; updated `ci/check.sh` accordingly: dropped the old "default
+  values" check entirely (redundant with `values-minimal.yaml`'s own
+  check in the fixture loop), added an explicit assertion that empty
+  `configFiles` is rejected (same shape as the existing
+  `ingress.create: "yes"` rejection check), and rebased every downstream
+  "default values" behavioral check (`securityContext`, `ingress.className`,
+  `NOTES.txt`) onto `values-minimal.yaml` instead of bare defaults, since
+  those no longer render at all.
+- [x] README: states plainly that `configFiles` is mandatory (unless
+  `existingSecret` is set), no further rationale, that has no value for
+  the user. `values.yaml`'s own `configFiles` comment keeps the
+  rationale (shadows the image's bundled demo config), that one's for
+  whoever reads the chart source, not the end user installing it.
 
 ### Re-verification
-- [ ] Full `charts/nanoidp/ci/check.sh` re-run locally after all of the
-  above.
+- [x] Full `charts/nanoidp/ci/check.sh` re-run locally after all of the
+  above, passes clean.
 - [ ] The two findings most dependent on real cluster behavior, the
   config-change rollout (stage A) and `securityContext` under
   `restricted` admission (stage C), were verified live by the maintainer
