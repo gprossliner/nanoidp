@@ -151,10 +151,11 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
   rejects it, so the schema's presence is itself pinned by a test.
 
 ### 2. Deployment + Service
-- [ ] `templates/deployment.yaml`: single replica hardcoded (no
+- [x] `templates/deployment.yaml`: single replica hardcoded (no
   `replicaCount` value read anywhere), `strategy.type: Recreate`,
-  `image`/`tag`/`pullPolicy` from values, `env`/`envFrom` passthrough,
-  `resources`, pod labels/annotations, `startupProbe` +
+  `image`/`tag`/`pullPolicy` from values (tag defaults to `.Chart.Version`,
+  not `.Chart.AppVersion`, since there is no `appVersion`), `env`/`envFrom`
+  passthrough, `resources`, pod labels/annotations, `startupProbe` +
   `livenessProbe`/`readinessProbe` on `/api/health`. Deployment's own
   metadata uses `nanoidp.mergedLabels`/`nanoidp.mergedAnnotations` (with
   no per-resource `extra`, just chart-managed + `commonLabels`/
@@ -166,17 +167,20 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
   `periodSeconds: 2`, `failureThreshold: 15` (up to ~30s to become ready
   before liveness takes over), `livenessProbe`/`readinessProbe` with
   `periodSeconds: 10`. Subject to the usual review round.
-- [ ] Auto-inject `INGRESS_HOST`/`INGRESS_URL` env vars into the container
+- [x] Auto-inject `INGRESS_HOST`/`INGRESS_URL` env vars into the container
   when `.Values.ingress.host` is set; `INGRESS_URL` scheme is `https` when
   `.Values.ingress.tls` is non-empty, `http` otherwise.
-- [ ] `templates/service.yaml`: `service.type` (default `ClusterIP`) on
+- [x] `templates/service.yaml`: `service.type` (default `ClusterIP`) on
   the app's port, metadata via `nanoidp.mergedLabels`/
   `nanoidp.mergedAnnotations` with `.Values.service.labels`/
   `.Values.service.annotations` as the resource-specific `extra`.
-- [ ] Tests: `helm template` snapshot/golden-file style tests (or a
-  `helm unittest` suite if the project prefers) covering single-replica
-  hardcoding, `Recreate` strategy, and the `INGRESS_HOST`/`INGRESS_URL`
-  injection with and without `ingress.tls` set.
+- [x] Tests: verified via `helm lint`/`helm template` runs (default
+  values: `replicas: 1`, `Recreate`, no `INGRESS_*` vars, tag `3.0.0`;
+  `ingress.host` set without `ingress.tls`: `INGRESS_URL` is `http://...`;
+  with `ingress.tls.secretName` set: `https://...`; `service.type`/
+  `labels`/`annotations` overrides render correctly). No `helm unittest`/
+  snapshot harness introduced yet, formal CI-integrated assertions land
+  with task 8.
 
 ### 3. Config Secret
 - [ ] `templates/config-secret.yaml`: renders `users.yaml`/`settings.yaml`
