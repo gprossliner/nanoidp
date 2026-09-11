@@ -166,6 +166,7 @@ Then the chart values:
 ingress:
   create: true
   host: idp.example.com
+  className: nginx # your cluster's IngressClass, see "Ingress and the issuer" above
 
 env:
   - name: CLIENT_SECRET

@@ -4,6 +4,7 @@
 ingress:
   create: true
   host: idp.example.com
+  className: nginx
 
 env:
   - name: CLIENT_SECRET

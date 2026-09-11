@@ -7,6 +7,10 @@
 #
 # Runs identically locally and in .github/workflows/helm.yml. Locally,
 # install the two extra tools once (e.g. `brew install kubeconform yq`).
+# One exception: the NOTES.txt assertions need `helm install --dry-run=
+# client` to succeed, which Helm 3 (unlike 4) can only do against a
+# reachable cluster. With Helm 3 and no cluster, that step prints a skip
+# message and moves on instead of failing.
 set -euo pipefail
 
 CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,6 +25,12 @@ done
 
 # Kubernetes version the rendered manifests are validated against.
 K8S_VERSION="${K8S_VERSION:-1.30.0}"
+
+# Helm 3's --dry-run=client for `helm install` still contacts the
+# cluster to fill in defaults and fails with "Kubernetes cluster
+# unreachable" when there is none. Helm 4 dropped that requirement. Only
+# major 3 needs the fallback below, 4 (or whatever comes after) doesn't.
+HELM_MAJOR="$(helm version --short | sed -E 's/^v?([0-9]+).*/\1/')"
 
 check_values() {
   local label="$1"
@@ -125,18 +135,42 @@ assert_eq "ingress.className renders as ingressClassName" \
 echo "=== NOTES.txt ==="
 # helm template does not render NOTES.txt at all, only helm install/
 # upgrade (or --dry-run=client) do.
-notes_default="$(helm install ci-check "$CHART_DIR" -f "$CI_DIR/values-minimal.yaml" --dry-run=client)"
-if ! grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$notes_default"; then
-  echo "FAIL: NOTES.txt did not warn about the 0.0.0 placeholder tag with default values" >&2
-  exit 1
-fi
-echo "ok: NOTES.txt warns about the 0.0.0 placeholder tag by default"
 
-notes_tagged="$(helm install ci-check "$CHART_DIR" -f "$CI_DIR/values-minimal.yaml" --dry-run=client --set image.tag=v3.0.0)"
-if grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$notes_tagged"; then
-  echo "FAIL: NOTES.txt still warned about 0.0.0 with an explicit image.tag set" >&2
+# Runs `helm install --dry-run=client "$@"` and prints the output on
+# stdout for the caller to capture. Returns 0 with output on success, 1
+# with nothing on stdout (a skip message goes to stderr instead) when
+# Helm 3 has no cluster to talk to, and otherwise prints the failure and
+# exits the whole script, same as any other assertion here.
+notes_or_skip() {
+  local desc="$1"
+  shift
+  local output
+  if output="$(helm install ci-check "$CHART_DIR" -f "$CI_DIR/values-minimal.yaml" --dry-run=client "$@" 2>&1)"; then
+    printf '%s\n' "$output"
+    return 0
+  fi
+  if [ "$HELM_MAJOR" -lt 4 ] && grep -q 'Kubernetes cluster unreachable' <<<"$output"; then
+    echo "skip: $desc (Helm $HELM_MAJOR's --dry-run=client needs a reachable cluster; none available here)" >&2
+    return 1
+  fi
+  printf '%s\n' "$output" >&2
+  echo "FAIL: $desc" >&2
   exit 1
+}
+
+if notes_default="$(notes_or_skip "NOTES.txt (default values)")"; then
+  if ! grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$notes_default"; then
+    echo "FAIL: NOTES.txt did not warn about the 0.0.0 placeholder tag with default values" >&2
+    exit 1
+  fi
+  echo "ok: NOTES.txt warns about the 0.0.0 placeholder tag by default"
+
+  notes_tagged="$(notes_or_skip "NOTES.txt (image.tag set)" --set image.tag=v3.0.0)"
+  if grep -q 'WARNING: the resolved image tag is "0.0.0"' <<<"$notes_tagged"; then
+    echo "FAIL: NOTES.txt still warned about 0.0.0 with an explicit image.tag set" >&2
+    exit 1
+  fi
+  echo "ok: NOTES.txt warning is absent with an explicit image.tag"
 fi
-echo "ok: NOTES.txt warning is absent with an explicit image.tag"
 
 echo "All nanoidp chart CI checks passed."
