@@ -202,12 +202,23 @@ once the feature ships, per the `docs/plans/auto-login.md` precedent (#318).
   the volume's `secretName` is the existing one instead.
 
 ### 4. Ingress
-- [ ] `templates/ingress.yaml`: rendered only when `ingress.create: true`,
-  using `ingress.host`, `ingress.tls`, and metadata via
-  `nanoidp.mergedLabels`/`nanoidp.mergedAnnotations` with
-  `.Values.ingress.labels`/`.Values.ingress.annotations` as the extra.
-- [ ] Tests: `helm template` with `ingress.create: false` (default) renders
-  no Ingress object at all.
+- [x] `templates/ingress.yaml`: rendered only when `ingress.create: true`,
+  using `ingress.host`, `ingress.tls` (a single `{secretName: ...}` object,
+  built into the standard k8s `spec.tls` list with `ingress.host` as its
+  one entry), and metadata via `nanoidp.mergedLabels`/
+  `nanoidp.mergedAnnotations` with `.Values.ingress.labels`/
+  `.Values.ingress.annotations` as the extra. Added a guard beyond what
+  the plan asked for: `ingress.create: true` with an empty `ingress.host`
+  now fails the render with an explicit message, rather than producing an
+  Ingress rule with no host (which Kubernetes treats as "match every
+  host", a footgun for a single-tenant test IdP that's meant to be
+  reachable at exactly one hostname).
+- [x] Tests: verified via `helm template`, default renders zero `Ingress`
+  objects; `ingress.create: true` with `ingress.host` set renders the
+  expected rule with no `tls:` block; adding `ingress.tls.secretName`
+  adds the `tls:` block; `ingress.labels`/`ingress.annotations` merge
+  correctly; `ingress.create: true` with no `ingress.host` fails the
+  render with the guard's message instead of producing an empty host.
 
 ### 5. Chart README
 - [ ] `charts/nanoidp/README.md` covering, per the design contract above:
