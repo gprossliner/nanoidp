@@ -385,3 +385,212 @@ jobs:
         run: |
           helm push .helm-dist/nanoidp-*.tgz oci://ghcr.io/cdelmonte-zg/charts
 ```
+
+## Review round 1 (maintainer, verified live against a kind cluster, k8s 1.36)
+
+Tested for real, not just templated: default values, each of the three
+`ci/` fixtures, a self-created `existingSecret`, and one with a
+management secret, six installs total, plus namespaces enforcing
+`baseline` and `restricted`. Overall assessment: contract from #327
+respected point by point, README honest about its limitations,
+`ci/check.sh` asserts behavior rather than just rendering successfully.
+Three blocking findings, five smaller ones, everything else confirmed
+working as documented.
+
+### Blocking
+
+1. **`helm upgrade` with a changed `configFiles` is a silent no-op.** The
+   Secret updates, the kubelet refreshes the projected file on disk, but
+   nanoidp reads its config once at boot and nothing rolls the pod, so
+   the running process and the file on disk disagree until a manual
+   `kubectl rollout restart`. Confirmed live: `users.yaml` on disk gained
+   `alice` after a `helm upgrade`, `/api/users` kept returning only
+   `admin` until the pod was restarted by hand.
+2. **The "Complete example" publishes an unauthenticated admin surface.**
+   nanoidp's `/api/*` and UI are unauthenticated by default; the example
+   renders a real Ingress with none of the two available gates
+   (`NANOIDP_MANAGEMENT_SECRET`, `session.require_ui_login`) turned on.
+   Confirmed live: `POST /api/users/admin/token` and `POST
+   /api/keys/rotate` both returned `200` through the Ingress, no
+   credentials. With both gates set: those return `401`, `/api/health`
+   and `/.well-known/openid-configuration` stay `200`, so probes/discovery
+   are unaffected.
+3. **`helm install ./charts/nanoidp` from a clone cannot start.**
+   `image.tag` defaults to `.Chart.Version`, the committed `0.0.0`
+   placeholder, so a straight `helm install` from a checkout fails with
+   an opaque `ImagePullBackOff` (`ghcr.io/...nanoidp:0.0.0` not found).
+   The placeholder itself is agreed and not being revisited, just its
+   silence.
+
+### Smaller
+
+4. **No `ingress.className`.** Worked in the maintainer's kind cluster
+   only because its bundled ingress-nginx runs with
+   `--watch-ingress-without-class=true`; ingress-nginx's own chart
+   defaults that to `false`, so on a normal cluster this Ingress is
+   silently ignored without the deprecated class annotation added by
+   hand.
+5. **No `securityContext`.** The `baseline`/`restricted` claim is
+   correct, verified live (`baseline`: `1/1 Running`; `restricted`:
+   `FailedCreate` on `allowPrivilegeEscalation`, capabilities,
+   `runAsNonRoot`, `seccompProfile`). Three of those four are
+   image-independent and can be set today
+   (`allowPrivilegeEscalation: false`, `capabilities.drop: ["ALL"]`,
+   `seccompProfile.type: RuntimeDefault`, confirmed live by patching the
+   running Deployment), narrowing `restricted` down to just
+   `runAsNonRoot`, the already-agreed image-side change.
+6. **Default values render a Secret with two empty config files.**
+   `configFiles.users`/`settings` default to `""`, and that empty mount
+   shadows the image's own bundled demo config rather than falling back
+   to it. A bare install starts, passes its probes, and has zero users
+   and zero OAuth clients. Maintainer's three options, any acceptable:
+   require non-empty in `values.schema.json`, default to
+   `ci/values-minimal.yaml`'s content, or just document the shadowing.
+7. **Dead code**: `nanoidp.labels`' `{{- if .Chart.AppVersion }}` branch
+   can never fire, there deliberately is no `appVersion`.
+8. **No `NOTES.txt`**, `helm install` prints nothing about how to reach
+   what it just installed.
+
+### Verified working, no action needed
+
+- `${INGRESS_URL}` expansion end to end: boot log shows `Issuer:
+  http://idp.example.com` with `values-full.yaml`, and a full
+  authorization code flow through the Ingress returns an ID token with
+  matching `iss`/`aud`/`sub`.
+- Read-only config mount fails exactly as documented, visibly (a UI
+  error alert with the real `Errno 30` message), not silently.
+- Signing keys rotate on restart, `kid` changes across a pod delete.
+- `configFiles.existingSecret` mounts the external Secret and renders no
+  Secret of its own.
+- `ingress.create: false` by default; the empty-`ingress.host` `fail()`
+  fires as designed.
+- Probes hit `/api/health`, stay ungated even with a management secret
+  set, `startupProbe` covers first-boot key generation.
+- `ci/check.sh` passes locally against Helm 3.19 and kubeconform 0.7.0.
+
+### Maintainer's own notes, nothing for us to do
+
+- The release checklist is simpler than the plan assumed: since
+  `image.tag` falls back to `.Chart.Version` and `helm package --version`
+  sets that from the tag, a release needs no file edit at all, the
+  maintainer will write the checklist that way.
+- The publish workflow sketch is a good starting point, the maintainer
+  will take it from there.
+- Confirmed: drop `docs/plans/helm-chart.md` before merge.
+
+## Round 2: implementation plan for the above
+
+Compacted from the maintainer's 7 numbered findings into 5 stages,
+grouped by file overlap and risk profile rather than 1:1 with the
+findings list.
+
+### Stage A: Config rollout + cleanup (findings 1, 7)
+- [ ] `templates/deployment.yaml`: add a `checksum/config` annotation to
+  the pod template, computed from the rendered `config-secret.yaml`
+  content (the standard Helm idiom:
+  `{{ include (print $.Template.BasePath "/config-secret.yaml") . | sha256sum }}`),
+  so a `configFiles.users`/`settings` change forces a new pod. Only when
+  `configFiles.existingSecret` is unset, the chart cannot see content it
+  does not render, so the checksum stays absent (not a fixed/fake value)
+  when `existingSecret` is set. `strategy: Recreate` already makes this a
+  short gap rather than an overlap, matching the chart's own single-pod
+  design.
+- [ ] README: one line stating that with `configFiles.existingSecret`,
+  rolling the pod on a config change is the user's own responsibility
+  (e.g. their own checksum annotation, or `kubectl rollout restart`).
+- [ ] `templates/_helpers.tpl`: delete the dead
+  `{{- if .Chart.AppVersion }}...{{- end }}` block in `nanoidp.labels`,
+  it can never fire, there deliberately is no `appVersion`. Unrelated to
+  the checksum fix, bundled here as a trivial, zero-risk cleanup rather
+  than its own commit.
+- [ ] Tests: `helm template` with two different `configFiles.users`
+  values renders two different `checksum/config` annotations; with
+  `configFiles.existingSecret` set, no `checksum/config` annotation
+  renders at all; rendered labels otherwise unchanged.
+
+### Stage B: Authenticate the "Complete example" (finding 2)
+- [ ] README's "Complete example": add `NANOIDP_MANAGEMENT_SECRET` via
+  `env`/`secretKeyRef` (same `kubectl create secret` step already there,
+  one more key) and `session.require_ui_login: true` in the
+  `configFiles.settings` block. Note the verified behavior: mutating
+  endpoints return `401`, `/api/health` and
+  `/.well-known/openid-configuration` stay `200`.
+- [ ] `charts/nanoidp/ci/values-full.yaml`: mirror the same two additions,
+  so the CI fixture and the README's complete example stay in sync (the
+  existing invariant between them).
+- [ ] No template/chart code changes in this stage, docs and CI fixture
+  content only.
+- [ ] Tests: re-run `charts/nanoidp/ci/check.sh`, add a rendered-output
+  assertion that `NANOIDP_MANAGEMENT_SECRET` is present in the
+  Deployment's `env` for `values-full.yaml`.
+
+### Stage C: Hardening knobs, `ingress.className` + `securityContext` (findings 4, 5)
+- [ ] `values.yaml`/`values.schema.json`: add `ingress.className: ""`.
+- [ ] `templates/ingress.yaml`: render `spec.ingressClassName` only when
+  non-empty.
+- [ ] README: mention `ingress.className`, since ingress-nginx's own
+  chart defaults `watchIngressWithoutClass: false`.
+- [ ] `values.yaml`/`values.schema.json`: add a `securityContext` value
+  (container-level: `allowPrivilegeEscalation`, `capabilities`,
+  `seccompProfile` are container-scoped fields), defaulting to the three
+  fields verified live: `allowPrivilegeEscalation: false`,
+  `capabilities.drop: ["ALL"]`, `seccompProfile.type: RuntimeDefault`.
+  Exposed as a real value, not hardcoded, so a future non-root image can
+  add `runAsNonRoot`/`runAsUser` without a template change.
+- [ ] README's Pod Security Standard section: note this narrows the
+  `restricted` gap down to just `runAsNonRoot`, the already-agreed
+  image-side change, not something this chart can close on its own.
+- [ ] Tests: `helm template` with and without `ingress.className` set;
+  default values render the three `securityContext` fields; full
+  `ci/check.sh` (kubeconform + assertions) still passes. Real
+  `baseline`/`restricted` admission behavior was already verified live by
+  the maintainer, not re-provable by `kubeconform`/`yq` alone.
+
+### Stage D: `NOTES.txt` (findings 3, 8)
+- [ ] `charts/nanoidp/templates/NOTES.txt`: print the resolved image
+  (`repository:tag`, tag defaulting to `.Chart.Version`); when the
+  effective tag is exactly `0.0.0`, print an explicit warning that this
+  is a publish-time placeholder and installing from a git checkout needs
+  `--set image.tag=<release>`. No `fail()`, that would force
+  `ci/check.sh` to always pass `--set image.tag=...`, more than this
+  needs. Also print how to reach the instance (the Ingress host if
+  `ingress.create` is true, a `kubectl port-forward` hint otherwise),
+  standard `NOTES.txt` content per Helm chart best practices, folds both
+  findings into the same piece of work.
+- [ ] Tests: `helm template --show-only` (or the equivalent notes
+  rendering) with default values shows the placeholder warning; with
+  `--set image.tag=<something else>` the warning is absent.
+
+### Stage E: Default `configFiles.users`/`settings`, stop shipping silent emptiness (finding 6)
+- [ ] Decision: make them required and non-empty via
+  `values.schema.json`, conditioned on `configFiles.existingSecret` being
+  unset (JSON Schema `if`/`then`, draft-07, which the declared
+  `$schema` already targets), consistent with this chart's existing
+  "fail loud instead of silently misbehaving" pattern (the Ingress
+  empty-host `fail()`, the issuer validator). Verify empirically first
+  that Helm's schema validator actually enforces `if`/`then` before
+  committing to this shape, fall back to defaulting both keys to
+  `ci/values-minimal.yaml`'s content if it does not. Kept isolated from
+  the other stages since it needs that empirical check first and may
+  need reworking.
+- [ ] If the conditional schema works: a bare `helm lint`/`helm template`
+  with no values now fails by design, update `ci/check.sh`'s "default
+  values" step to assert that failure (same shape as the existing
+  `ingress.create: "yes"` rejection check), rather than expecting it to
+  render.
+- [ ] README: state plainly that `configFiles` is mandatory (unless
+  `existingSecret` is set) and why, the mounted Secret always shadows the
+  image's bundled demo config, so an empty mount is worse than no mount.
+
+### Re-verification
+- [ ] Full `charts/nanoidp/ci/check.sh` re-run locally after all of the
+  above.
+- [ ] The two findings most dependent on real cluster behavior, the
+  config-change rollout (stage A) and `securityContext` under
+  `restricted` admission (stage C), were verified live by the maintainer
+  against a kind cluster; our local `kubeconform`/`yq` harness can prove
+  the templating logic (checksum changes, fields render) but not the
+  actual kubelet/admission-controller behavior, worth a note in the PR
+  reply asking the maintainer to re-verify those two live again, rather
+  than claiming parity with round 1's live testing on templating checks
+  alone.
